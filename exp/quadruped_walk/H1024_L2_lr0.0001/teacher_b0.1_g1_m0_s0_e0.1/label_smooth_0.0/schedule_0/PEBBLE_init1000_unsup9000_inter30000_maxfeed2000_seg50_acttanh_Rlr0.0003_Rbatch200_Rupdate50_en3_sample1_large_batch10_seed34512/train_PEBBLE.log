@@ -1,10 +1,5 @@
-[2021-10-15 17:33:31,997][absl][INFO] - MUJOCO_GL is not set, so an OpenGL backend will be chosen automatically.
-[2021-10-15 17:33:31,998][absl][INFO] - Failed to import OpenGL backend: glfw
-[2021-10-15 17:33:32,007][OpenGL.acceleratesupport][INFO] - No OpenGL_accelerate module loaded: No module named 'OpenGL_accelerate'
-[2021-10-15 17:33:32,033][absl][INFO] - Successfully imported OpenGL backend: egl
-[2021-10-15 17:33:32,243][absl][INFO] - MuJoCo library version is: 200
-[2021-10-15 17:37:24,144][absl][INFO] - MUJOCO_GL is not set, so an OpenGL backend will be chosen automatically.
-[2021-10-15 17:37:24,146][absl][INFO] - Failed to import OpenGL backend: glfw
-[2021-10-15 17:37:24,155][OpenGL.acceleratesupport][INFO] - No OpenGL_accelerate module loaded: No module named 'OpenGL_accelerate'
-[2021-10-15 17:37:24,181][absl][INFO] - Successfully imported OpenGL backend: egl
-[2021-10-15 17:37:24,385][absl][INFO] - MuJoCo library version is: 200
+[2021-10-20 00:16:18,927][absl][INFO] - MUJOCO_GL is not set, so an OpenGL backend will be chosen automatically.
+[2021-10-20 00:16:18,929][absl][INFO] - Failed to import OpenGL backend: glfw
+[2021-10-20 00:16:18,937][OpenGL.acceleratesupport][INFO] - No OpenGL_accelerate module loaded: No module named 'OpenGL_accelerate'
+[2021-10-20 00:16:18,971][absl][INFO] - Successfully imported OpenGL backend: egl
+[2021-10-20 00:16:19,198][absl][INFO] - MuJoCo library version is: 200
