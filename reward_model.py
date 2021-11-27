@@ -85,7 +85,8 @@ class RewardModel:
     def __init__(self, ds, da, 
                  ensemble_size=3, lr=3e-4, mb_size = 128, size_segment=1, 
                  env_maker=None, max_size=100, activation='tanh', capacity=5e5,  
-                 large_batch=1, label_margin=0.0, 
+                 large_batch=1, label_margin=0.0,
+                 select_teacher=False, num_teachers=1,
                  teacher_beta=-1, teacher_gamma=1, 
                  teacher_eps_mistake=0, 
                  teacher_eps_skip=0, 
@@ -128,13 +129,31 @@ class RewardModel:
         self.large_batch = large_batch
         
         # new teacher
-        self.teacher_beta = teacher_beta
-        self.teacher_gamma = teacher_gamma
-        self.teacher_eps_mistake = teacher_eps_mistake
+        # TEMP
+        # self.teacher_beta = teacher_beta[1]
+        # self.teacher_gamma = teacher_gamma[1]
+        # self.teacher_eps_mistake = teacher_eps_mistake[1]
+
         self.teacher_eps_equal = teacher_eps_equal
         self.teacher_eps_skip = teacher_eps_skip
         self.teacher_thres_skip = 0
         self.teacher_thres_equal = 0
+
+        self.select_teacher = select_teacher
+        self.num_teachers = num_teachers
+        self.teachers = {}
+        for i in range(self.num_teachers):
+            try:
+                self.teachers[i] = Teacher(beta=teacher_beta[i], gamma=teacher_gamma[i], eps_mistake=teacher_eps_mistake[i],
+                               eps_skip=self.teacher_eps_skip, eps_equal=self.teacher_eps_equal,
+                               thres_skip=self.teacher_thres_skip, thres_equal=self.teacher_thres_equal)
+            except IndexError:
+                raise ValueError("num_teachers is {}, so expecting at least {} values in each of the teacher parameter arrays"
+                                 .format(self.num_teachers, self.num_teachers))
+        if self.select_teacher:
+            print("Imported {} teacher(s), will actively select teacher to query".format(num_teachers))
+        else:
+            print("Imported {} teacher(s), but will always query teacher 0".format(num_teachers))
         
         self.label_margin = label_margin
         self.label_target = 1 - 2*self.label_margin
@@ -369,57 +388,60 @@ class RewardModel:
             np.copyto(self.buffer_label[self.buffer_index:next_index], labels)
             self.buffer_index = next_index
             
-    def get_label(self, sa_t_1, sa_t_2, r_t_1, r_t_2):
-        sum_r_t_1 = np.sum(r_t_1, axis=1)
-        sum_r_t_2 = np.sum(r_t_2, axis=1)
-        
-        # skip the query
-        if self.teacher_thres_skip > 0: 
-            max_r_t = np.maximum(sum_r_t_1, sum_r_t_2)
-            max_index = (max_r_t > self.teacher_thres_skip).reshape(-1)
-            if sum(max_index) == 0:
-                return None, None, None, None, []
-
-            sa_t_1 = sa_t_1[max_index]
-            sa_t_2 = sa_t_2[max_index]
-            r_t_1 = r_t_1[max_index]
-            r_t_2 = r_t_2[max_index]
-            sum_r_t_1 = np.sum(r_t_1, axis=1)
-            sum_r_t_2 = np.sum(r_t_2, axis=1)
-        
-        # equally preferable
-        margin_index = (np.abs(sum_r_t_1 - sum_r_t_2) < self.teacher_thres_equal).reshape(-1)
-        
-        # perfectly rational
-        seg_size = r_t_1.shape[1]
-        temp_r_t_1 = r_t_1.copy()
-        temp_r_t_2 = r_t_2.copy()
-        for index in range(seg_size-1):
-            temp_r_t_1[:,:index+1] *= self.teacher_gamma
-            temp_r_t_2[:,:index+1] *= self.teacher_gamma
-        sum_r_t_1 = np.sum(temp_r_t_1, axis=1)
-        sum_r_t_2 = np.sum(temp_r_t_2, axis=1)
-            
-        rational_labels = 1*(sum_r_t_1 < sum_r_t_2)
-        if self.teacher_beta > 0: # Bradley-Terry rational model
-            r_hat = torch.cat([torch.Tensor(sum_r_t_1), 
-                               torch.Tensor(sum_r_t_2)], axis=-1)
-            r_hat = r_hat*self.teacher_beta
-            ent = F.softmax(r_hat, dim=-1)[:, 1]
-            labels = torch.bernoulli(ent).int().numpy().reshape(-1, 1)
-        else:
-            labels = rational_labels
-        
-        # making a mistake
-        len_labels = labels.shape[0]
-        rand_num = np.random.rand(len_labels)
-        noise_index = rand_num <= self.teacher_eps_mistake
-        labels[noise_index] = 1 - labels[noise_index]
- 
-        # equally preferable
-        labels[margin_index] = -1 
-        
-        return sa_t_1, sa_t_2, r_t_1, r_t_2, labels
+    # def get_label(self, sa_t_1, sa_t_2, r_t_1, r_t_2, teacher_index=1):
+    #
+    #     return self.teachers[teacher_index].get_label(sa_t_1, sa_t_2, r_t_1, r_t_2)
+    #
+        # sum_r_t_1 = np.sum(r_t_1, axis=1)
+        # sum_r_t_2 = np.sum(r_t_2, axis=1)
+        #
+        # # skip the query
+        # if self.teachers[1].thres_skip > 0:
+        #     max_r_t = np.maximum(sum_r_t_1, sum_r_t_2)
+        #     max_index = (max_r_t > self.teachers[1].thres_skip).reshape(-1)
+        #     if sum(max_index) == 0:
+        #         return None, None, None, None, []
+        #
+        #     sa_t_1 = sa_t_1[max_index]
+        #     sa_t_2 = sa_t_2[max_index]
+        #     r_t_1 = r_t_1[max_index]
+        #     r_t_2 = r_t_2[max_index]
+        #     sum_r_t_1 = np.sum(r_t_1, axis=1)
+        #     sum_r_t_2 = np.sum(r_t_2, axis=1)
+        #
+        # # equally preferable
+        # margin_index = (np.abs(sum_r_t_1 - sum_r_t_2) < self.teachers[1].thres_equal).reshape(-1)
+        #
+        # # perfectly rational
+        # seg_size = r_t_1.shape[1]
+        # temp_r_t_1 = r_t_1.copy()
+        # temp_r_t_2 = r_t_2.copy()
+        # for index in range(seg_size-1):
+        #     temp_r_t_1[:,:index+1] *= self.teachers[1].gamma
+        #     temp_r_t_2[:,:index+1] *= self.teachers[1].gamma
+        # sum_r_t_1 = np.sum(temp_r_t_1, axis=1)
+        # sum_r_t_2 = np.sum(temp_r_t_2, axis=1)
+        #
+        # rational_labels = 1*(sum_r_t_1 < sum_r_t_2)
+        # if self.teachers[1].beta > 0: # Bradley-Terry rational model
+        #     r_hat = torch.cat([torch.Tensor(sum_r_t_1),
+        #                        torch.Tensor(sum_r_t_2)], axis=-1)
+        #     r_hat = r_hat*self.teachers[1].beta
+        #     ent = F.softmax(r_hat, dim=-1)[:, 1]
+        #     labels = torch.bernoulli(ent).int().numpy().reshape(-1, 1)
+        # else:
+        #     labels = rational_labels
+        #
+        # # making a mistake
+        # len_labels = labels.shape[0]
+        # rand_num = np.random.rand(len_labels)
+        # noise_index = rand_num <= self.teachers[1].eps_mistake
+        # labels[noise_index] = 1 - labels[noise_index]
+        #
+        # # equally preferable
+        # labels[margin_index] = -1
+        #
+        # return sa_t_1, sa_t_2, r_t_1, r_t_2, labels
     
     def kcenter_sampling(self):
         
@@ -542,13 +564,17 @@ class RewardModel:
         
         return len(labels)
     
-    def uniform_sampling(self):
+    def uniform_sampling(self, performance):
         # get queries
         sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_queries(
             mb_size=self.mb_size)
+
+        # select teacher
+        teacher_index = self.select_teacher_to_query(performance)
+        teacher = self.teachers[teacher_index]
             
         # get labels
-        sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(
+        sa_t_1, sa_t_2, r_t_1, r_t_2, labels = teacher.get_label(
             sa_t_1, sa_t_2, r_t_1, r_t_2)
         
         if len(labels) > 0:
@@ -556,7 +582,7 @@ class RewardModel:
         
         return len(labels)
     
-    def disagreement_sampling(self):
+    def disagreement_sampling(self, performance):
         
         # get queries
         sa_t_1, sa_t_2, r_t_1, r_t_2 =  self.get_queries(
@@ -567,10 +593,14 @@ class RewardModel:
         top_k_index = (-disagree).argsort()[:self.mb_size]
         r_t_1, sa_t_1 = r_t_1[top_k_index], sa_t_1[top_k_index]
         r_t_2, sa_t_2 = r_t_2[top_k_index], sa_t_2[top_k_index]        
-        
+
+        # select teacher
+        teacher_index = self.select_teacher_to_query(performance)
+        teacher = self.teachers[teacher_index]
+
         # get labels
-        sa_t_1, sa_t_2, r_t_1, r_t_2, labels = self.get_label(
-            sa_t_1, sa_t_2, r_t_1, r_t_2)        
+        sa_t_1, sa_t_2, r_t_1, r_t_2, labels = teacher.get_label(
+            sa_t_1, sa_t_2, r_t_1, r_t_2)
         if len(labels) > 0:
             self.put_queries(sa_t_1, sa_t_2, labels)
         
@@ -717,3 +747,85 @@ class RewardModel:
         ensemble_acc = ensemble_acc / total
         
         return ensemble_acc
+
+    def select_teacher_to_query(self, performance):
+
+        if not self.select_teacher:
+            return 0
+
+        # TODO
+        # 1) combine performance with cost of last pull to get reward
+        # 2) update distributions or whatever using reward
+        # 3) select new arm to pull
+        # 4) get cost of pulling that arm
+
+        return 0
+
+class Teacher:
+
+    def __init__(self, beta, gamma, eps_mistake, eps_skip, eps_equal, thres_skip, thres_equal, query_cost=0):
+        self.beta = beta
+        self.gamma = gamma
+        self.eps_mistake = eps_mistake
+        self.eps_skip = eps_skip
+        self.eps_equal = eps_equal
+        self.thres_skip = thres_skip
+        self.thres_equal = thres_equal
+
+        # TODO: should be parameterized distribution
+        self.query_cost = query_cost
+
+    def get_label(self, sa_t_1, sa_t_2, r_t_1, r_t_2):
+        sum_r_t_1 = np.sum(r_t_1, axis=1)
+        sum_r_t_2 = np.sum(r_t_2, axis=1)
+
+        # skip the query
+        if self.thres_skip > 0:
+            max_r_t = np.maximum(sum_r_t_1, sum_r_t_2)
+            max_index = (max_r_t > self.thres_skip).reshape(-1)
+            if sum(max_index) == 0:
+                return None, None, None, None, []
+
+            sa_t_1 = sa_t_1[max_index]
+            sa_t_2 = sa_t_2[max_index]
+            r_t_1 = r_t_1[max_index]
+            r_t_2 = r_t_2[max_index]
+            sum_r_t_1 = np.sum(r_t_1, axis=1)
+            sum_r_t_2 = np.sum(r_t_2, axis=1)
+
+        # equally preferable
+        margin_index = (np.abs(sum_r_t_1 - sum_r_t_2) < self.thres_equal).reshape(-1)
+
+        # perfectly rational
+        seg_size = r_t_1.shape[1]
+        temp_r_t_1 = r_t_1.copy()
+        temp_r_t_2 = r_t_2.copy()
+        for index in range(seg_size - 1):
+            temp_r_t_1[:, :index + 1] *= self.gamma
+            temp_r_t_2[:, :index + 1] *= self.gamma
+        sum_r_t_1 = np.sum(temp_r_t_1, axis=1)
+        sum_r_t_2 = np.sum(temp_r_t_2, axis=1)
+
+        rational_labels = 1 * (sum_r_t_1 < sum_r_t_2)
+        if self.beta > 0:  # Bradley-Terry rational model
+            r_hat = torch.cat([torch.Tensor(sum_r_t_1),
+                               torch.Tensor(sum_r_t_2)], axis=-1)
+            r_hat = r_hat * self.beta
+            ent = F.softmax(r_hat, dim=-1)[:, 1]
+            labels = torch.bernoulli(ent).int().numpy().reshape(-1, 1)
+        else:
+            labels = rational_labels
+
+        # making a mistake
+        len_labels = labels.shape[0]
+        rand_num = np.random.rand(len_labels)
+        noise_index = rand_num <= self.eps_mistake
+        labels[noise_index] = 1 - labels[noise_index]
+
+        # equally preferable
+        labels[margin_index] = -1
+
+        return sa_t_1, sa_t_2, r_t_1, r_t_2, labels
+
+    def get_cost(self):
+        return self.query_cost

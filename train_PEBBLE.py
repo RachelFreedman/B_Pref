@@ -71,14 +71,16 @@ class Workspace(object):
             lr=cfg.reward_lr,
             mb_size=cfg.reward_batch, 
             large_batch=cfg.large_batch, 
-            label_margin=cfg.label_margin, 
+            label_margin=cfg.label_margin,
+            select_teacher=cfg.select_teacher,
+            num_teachers=cfg.num_teachers,
             teacher_beta=cfg.teacher_beta, 
             teacher_gamma=cfg.teacher_gamma, 
             teacher_eps_mistake=cfg.teacher_eps_mistake, 
             teacher_eps_skip=cfg.teacher_eps_skip, 
             teacher_eps_equal=cfg.teacher_eps_equal)
         
-    def evaluate(self):
+    def evaluate(self, log=True):
         average_episode_reward = 0
         average_true_episode_reward = 0
         success_rate = 0
@@ -112,30 +114,33 @@ class Workspace(object):
         if self.log_success:
             success_rate /= self.cfg.num_eval_episodes
             success_rate *= 100.0
-        
-        self.logger.log('eval/episode_reward', average_episode_reward,
+
+        if log:
+            self.logger.log('eval/episode_reward', average_episode_reward,
+                            self.step)
+            self.logger.log('eval/true_episode_reward', average_true_episode_reward,
+                            self.step)
+            if self.log_success:
+                self.logger.log('eval/success_rate', success_rate,
                         self.step)
-        self.logger.log('eval/true_episode_reward', average_true_episode_reward,
-                        self.step)
-        if self.log_success:
-            self.logger.log('eval/success_rate', success_rate,
-                    self.step)
-            self.logger.log('train/true_episode_success', success_rate,
-                        self.step)
-        self.logger.dump(self.step)
-    
-    def learn_reward(self, first_flag=0):
+                self.logger.log('train/true_episode_success', success_rate,
+                            self.step)
+            self.logger.dump(self.step)
+
+        return average_episode_reward, average_true_episode_reward
+
+    def learn_reward(self, performance=0, first_flag=0):
                 
         # get feedbacks
         labeled_queries, noisy_queries = 0, 0
         if first_flag == 1:
             # if it is first time to get feedback, need to use random sampling
-            labeled_queries = self.reward_model.uniform_sampling()
+            labeled_queries = self.reward_model.uniform_sampling(performance=0)
         else:
             if self.cfg.feed_type == 0:
-                labeled_queries = self.reward_model.uniform_sampling()
+                labeled_queries = self.reward_model.uniform_sampling(performance=performance)
             elif self.cfg.feed_type == 1:
-                labeled_queries = self.reward_model.disagreement_sampling()
+                labeled_queries = self.reward_model.disagreement_sampling(performance=performance)
             elif self.cfg.feed_type == 2:
                 labeled_queries = self.reward_model.entropy_sampling()
             elif self.cfg.feed_type == 3:
@@ -278,8 +283,10 @@ class Workspace(object):
                         # corner case: new total feed > max feed
                         if self.reward_model.mb_size + self.total_feedback > self.cfg.max_feedback:
                             self.reward_model.set_batch(self.cfg.max_feedback - self.total_feedback)
-                            
-                        self.learn_reward()
+
+                        # TODO: approximate performance
+                        arbitrary_number = 100
+                        self.learn_reward(performance=arbitrary_number)
                         self.replay_buffer.relabel_with_predictor(self.reward_model)
                         interact_count = 0
                         
