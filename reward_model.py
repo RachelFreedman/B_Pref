@@ -90,7 +90,9 @@ class RewardModel:
                  teacher_beta=-1, teacher_gamma=1, 
                  teacher_eps_mistake=0, 
                  teacher_eps_skip=0, 
-                 teacher_eps_equal=0):
+                 teacher_eps_equal=0,
+                 teacher_query_cost=0,
+                 UCB_confidence=0.5):
         
         # train data is trajectories, must process to sa and s..   
         self.ds = ds
@@ -139,13 +141,15 @@ class RewardModel:
         self.teacher_thres_skip = 0
         self.teacher_thres_equal = 0
 
+        self.UCB = UCB(arms=num_teachers, confidence=UCB_confidence)
+        self.previous_teacher_queried = None
         self.select_teacher = select_teacher
         self.num_teachers = num_teachers
         self.teachers = {}
         for i in range(self.num_teachers):
             try:
                 self.teachers[i] = Teacher(beta=teacher_beta[i], gamma=teacher_gamma[i], eps_mistake=teacher_eps_mistake[i],
-                               eps_skip=self.teacher_eps_skip, eps_equal=self.teacher_eps_equal,
+                               query_cost=teacher_query_cost[i], eps_skip=self.teacher_eps_skip, eps_equal=self.teacher_eps_equal,
                                thres_skip=self.teacher_thres_skip, thres_equal=self.teacher_thres_equal)
             except IndexError:
                 raise ValueError("num_teachers is {}, so expecting at least {} values in each of the teacher parameter arrays"
@@ -753,13 +757,17 @@ class RewardModel:
         if not self.select_teacher:
             return 0
 
-        # TODO
-        # 1) combine performance with cost of last pull to get reward
-        # 2) update distributions or whatever using reward
-        # 3) select new arm to pull
-        # 4) get cost of pulling that arm
+        # update bandit based on performance
+        if self.previous_teacher_queried is not None:
+            cost = self.teachers[self.previous_teacher_queried].get_cost()
+            self.UCB.update(arm=self.previous_teacher_queried, cost=cost, reward=performance)
 
-        return 0
+        teacher = self.UCB.select()
+        self.previous_teacher_queried = teacher
+
+        self.UCB.print_two_armed_bandit_state()
+
+        return teacher
 
 class Teacher:
 
@@ -771,8 +779,6 @@ class Teacher:
         self.eps_equal = eps_equal
         self.thres_skip = thres_skip
         self.thres_equal = thres_equal
-
-        # TODO: should be parameterized distribution
         self.query_cost = query_cost
 
     def get_label(self, sa_t_1, sa_t_2, r_t_1, r_t_2):
@@ -829,3 +835,61 @@ class Teacher:
 
     def get_cost(self):
         return self.query_cost
+
+class UCB:
+
+    Q = "quality"
+    N = "count"
+
+    def __init__(self, arms, confidence):
+        self.arms = arms
+        self.estimates = {}
+        self.confidence = confidence
+        self.time = 0
+
+        initial_arm = { UCB.Q: 0, UCB.N: 0}
+        for arm in range(arms):
+            self.estimates[arm] = initial_arm.copy()
+
+    def select(self):
+        self.time += 1
+
+        # estimate val of each arm
+        values = [-1]*self.arms
+        for a in range(self.arms):
+            values[a] = self.evaluate(a)
+
+        # choose randomly amongst argmax
+        arm = self.random_argmax(values)
+        self.estimates[arm][UCB.N] += 1
+
+        print("Pulled arm {}. Arm UCB estimates: {}, number of arm {} pulls: {}"
+              .format(arm, values, arm, self.estimates[arm][UCB.N]))
+
+        return arm
+
+    def evaluate(self, arm):
+        return self.estimates[arm][UCB.Q] + self.uncertainty(arm)
+
+    def uncertainty(self, arm):
+        if self.estimates[arm][UCB.N] == 0: return float('inf')
+        return self.confidence * np.sqrt(np.log(self.time)/self.estimates[arm][UCB.N])
+
+    def update(self, arm, cost, reward):
+        Q = self.estimates[arm][UCB.Q]
+
+        R = cost + reward
+        y = 1.0 / self.estimates[arm][UCB.N]
+        self.estimates[arm][UCB.Q] = (1-y)*Q + y*R
+
+        print("Updating Q of arm {} to {:.1f}. Old Q: {:.1f}, cost: {}, reward: {}, y: {:.1f}."
+              .format(arm, self.estimates[arm][UCB.Q], Q, cost, reward, y))
+
+    def random_argmax(self, vector):
+        index = np.random.choice(np.where(vector == np.array(vector).max())[0])
+        return index
+
+    def print_two_armed_bandit_state(self):
+        print("t: {}  |  arm 0 Q: {:.1f}  N: {}  |  arm 1 Q: {:.1f}  N: {}"
+              .format(self.time, self.estimates[0][UCB.Q], self.estimates[0][UCB.N],
+                      self.estimates[1][UCB.Q], self.estimates[1][UCB.N]))
