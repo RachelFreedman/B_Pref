@@ -184,7 +184,17 @@ class Workspace(object):
 
         interact_count = 0
         while self.step < self.cfg.num_train_steps:
+
+            if self.step < 100:
+                if self.step % 10 == 0:
+                    print("step: {}".format(self.step))
+            elif self.step % 100 == 0:
+                print("step: {}".format(self.step))
+
             if done:
+
+                print("step: {}, finished episode".format(self.step))
+
                 if self.step > 0:
                     self.logger.log('train/duration', time.time() - start_time, self.step)
                     start_time = time.time()
@@ -229,6 +239,9 @@ class Workspace(object):
 
             # run training update                
             if self.step == (self.cfg.num_seed_steps + self.cfg.num_unsup_steps):
+
+                print("step: {}, beginning learning with reward".format(self.step))
+
                 # update schedule
                 if self.cfg.reward_schedule == 1:
                     frac = (self.cfg.num_train_steps-self.step) / self.cfg.num_train_steps
@@ -286,9 +299,12 @@ class Workspace(object):
                         if self.reward_model.mb_size + self.total_feedback > self.cfg.max_feedback:
                             self.reward_model.set_batch(self.cfg.max_feedback - self.total_feedback)
 
-                        # TODO: approximate performance
-                        arbitrary_number = 100
-                        self.learn_reward(performance=arbitrary_number)
+                        print("step: {}, get reward feedback".format(self.step))
+                        if len(avg_train_true_return) < 10:
+                            print("WARNING: there are only {} episode returns".format(len(avg_train_true_return)))
+                        print("most recent episode returns:", avg_train_true_return)
+                        sum_prev_10_true_reward = sum(avg_train_true_return)
+                        self.learn_reward(performance=sum_prev_10_true_reward)
                         self.replay_buffer.relabel_with_predictor(self.reward_model)
                         interact_count = 0
                         
@@ -321,11 +337,14 @@ class Workspace(object):
             episode_step += 1
             self.step += 1
             interact_count += 1
-            
+
         self.agent.save(self.work_dir, self.step)
         self.reward_model.save(self.work_dir, self.step)
+
+        if self.cfg.select_teacher:
+            self.reward_model.write_teacher_selection_record_to_csv(self.work_dir)
         
-@hydra.main(config_path='config/trian_PEBBLE.yaml', strict=True)
+@hydra.main(config_path='config/active_PEBBLE.yaml', strict=True)
 def main(cfg):
     workspace = Workspace(cfg)
     workspace.run()

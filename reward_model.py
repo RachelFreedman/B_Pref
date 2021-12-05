@@ -10,6 +10,8 @@ import copy
 import scipy.stats as st
 import os
 import time
+import csv
+import random
 
 from scipy.stats import norm
 
@@ -92,7 +94,7 @@ class RewardModel:
                  teacher_eps_skip=0, 
                  teacher_eps_equal=0,
                  teacher_query_cost=0,
-                 UCB_confidence=0.5):
+                 UCB_confidence=10):
         
         # train data is trajectories, must process to sa and s..   
         self.ds = ds
@@ -129,12 +131,6 @@ class RewardModel:
         self.best_label = []
         self.best_action = []
         self.large_batch = large_batch
-        
-        # new teacher
-        # TEMP
-        # self.teacher_beta = teacher_beta[1]
-        # self.teacher_gamma = teacher_gamma[1]
-        # self.teacher_eps_mistake = teacher_eps_mistake[1]
 
         self.teacher_eps_equal = teacher_eps_equal
         self.teacher_eps_skip = teacher_eps_skip
@@ -157,7 +153,7 @@ class RewardModel:
         if self.select_teacher:
             print("Imported {} teacher(s), will actively select teacher to query".format(num_teachers))
         else:
-            print("Imported {} teacher(s), but will always query teacher 0".format(num_teachers))
+            print("Imported {} teacher(s), will select teacher for each query randomly".format(num_teachers))
         
         self.label_margin = label_margin
         self.label_target = 1 - 2*self.label_margin
@@ -391,61 +387,6 @@ class RewardModel:
             np.copyto(self.buffer_seg2[self.buffer_index:next_index], sa_t_2)
             np.copyto(self.buffer_label[self.buffer_index:next_index], labels)
             self.buffer_index = next_index
-            
-    # def get_label(self, sa_t_1, sa_t_2, r_t_1, r_t_2, teacher_index=1):
-    #
-    #     return self.teachers[teacher_index].get_label(sa_t_1, sa_t_2, r_t_1, r_t_2)
-    #
-        # sum_r_t_1 = np.sum(r_t_1, axis=1)
-        # sum_r_t_2 = np.sum(r_t_2, axis=1)
-        #
-        # # skip the query
-        # if self.teachers[1].thres_skip > 0:
-        #     max_r_t = np.maximum(sum_r_t_1, sum_r_t_2)
-        #     max_index = (max_r_t > self.teachers[1].thres_skip).reshape(-1)
-        #     if sum(max_index) == 0:
-        #         return None, None, None, None, []
-        #
-        #     sa_t_1 = sa_t_1[max_index]
-        #     sa_t_2 = sa_t_2[max_index]
-        #     r_t_1 = r_t_1[max_index]
-        #     r_t_2 = r_t_2[max_index]
-        #     sum_r_t_1 = np.sum(r_t_1, axis=1)
-        #     sum_r_t_2 = np.sum(r_t_2, axis=1)
-        #
-        # # equally preferable
-        # margin_index = (np.abs(sum_r_t_1 - sum_r_t_2) < self.teachers[1].thres_equal).reshape(-1)
-        #
-        # # perfectly rational
-        # seg_size = r_t_1.shape[1]
-        # temp_r_t_1 = r_t_1.copy()
-        # temp_r_t_2 = r_t_2.copy()
-        # for index in range(seg_size-1):
-        #     temp_r_t_1[:,:index+1] *= self.teachers[1].gamma
-        #     temp_r_t_2[:,:index+1] *= self.teachers[1].gamma
-        # sum_r_t_1 = np.sum(temp_r_t_1, axis=1)
-        # sum_r_t_2 = np.sum(temp_r_t_2, axis=1)
-        #
-        # rational_labels = 1*(sum_r_t_1 < sum_r_t_2)
-        # if self.teachers[1].beta > 0: # Bradley-Terry rational model
-        #     r_hat = torch.cat([torch.Tensor(sum_r_t_1),
-        #                        torch.Tensor(sum_r_t_2)], axis=-1)
-        #     r_hat = r_hat*self.teachers[1].beta
-        #     ent = F.softmax(r_hat, dim=-1)[:, 1]
-        #     labels = torch.bernoulli(ent).int().numpy().reshape(-1, 1)
-        # else:
-        #     labels = rational_labels
-        #
-        # # making a mistake
-        # len_labels = labels.shape[0]
-        # rand_num = np.random.rand(len_labels)
-        # noise_index = rand_num <= self.teachers[1].eps_mistake
-        # labels[noise_index] = 1 - labels[noise_index]
-        #
-        # # equally preferable
-        # labels[margin_index] = -1
-        #
-        # return sa_t_1, sa_t_2, r_t_1, r_t_2, labels
     
     def kcenter_sampling(self):
         
@@ -755,7 +696,7 @@ class RewardModel:
     def select_teacher_to_query(self, performance):
 
         if not self.select_teacher:
-            return 0
+            return random.randint(0,self.num_teachers-1)
 
         # update bandit based on performance
         if self.previous_teacher_queried is not None:
@@ -768,6 +709,9 @@ class RewardModel:
         self.UCB.print_two_armed_bandit_state()
 
         return teacher
+
+    def write_teacher_selection_record_to_csv(self, directory):
+        self.UCB.write_record_to_csv(directory)
 
 class Teacher:
 
@@ -846,6 +790,7 @@ class UCB:
         self.estimates = {}
         self.confidence = confidence
         self.time = 0
+        self.record = []
 
         initial_arm = { UCB.Q: 0, UCB.N: 0}
         for arm in range(arms):
@@ -882,8 +827,8 @@ class UCB:
         y = 1.0 / self.estimates[arm][UCB.N]
         self.estimates[arm][UCB.Q] = (1-y)*Q + y*R
 
-        print("Updating Q of arm {} to {:.1f}. Old Q: {:.1f}, cost: {}, reward: {}, y: {:.1f}."
-              .format(arm, self.estimates[arm][UCB.Q], Q, cost, reward, y))
+        self.record_pull(self.time, arm, cost, reward, R)
+        return "Updating Q of arm {} to {:.1f}. Old Q: {:.1f}, cost: {}, reward: {}, y: {:.1f}.".format(arm, self.estimates[arm][UCB.Q], Q, cost, reward, y)
 
     def random_argmax(self, vector):
         index = np.random.choice(np.where(vector == np.array(vector).max())[0])
@@ -893,3 +838,31 @@ class UCB:
         print("t: {}  |  arm 0 Q: {:.1f}  N: {}  |  arm 1 Q: {:.1f}  N: {}"
               .format(self.time, self.estimates[0][UCB.Q], self.estimates[0][UCB.N],
                       self.estimates[1][UCB.Q], self.estimates[1][UCB.N]))
+
+    def record_pull(self, t, arm, cost, performance, reward):
+        Q_vals = []
+        counts = []
+        for key in self.estimates:
+            Q_vals.append(self.estimates[key][UCB.Q])
+            counts.append(self.estimates[key][UCB.N])
+        entry = {
+            "time": t,
+            "arm": arm,
+            "reward": reward,
+            "cost": cost,
+            "performance": performance,
+            "estimates": Q_vals,
+            "counts": counts
+        }
+        self.record.append(entry.copy())
+
+    def write_record_to_csv(self, directory):
+        csv_columns = ["time", "arm", "reward", "cost", "performance", "estimates", "counts"]
+        filename = "bandit.csv"
+        path = directory + os.path.sep + filename
+        print("Recording teacher selection bandit history at", path)
+        with open(path, 'w') as file:
+            writer = csv.DictWriter(file, fieldnames=csv_columns)
+            writer.writeheader()
+            for data in self.record:
+                writer.writerow(data)
