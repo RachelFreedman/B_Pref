@@ -177,7 +177,17 @@ class Workspace(object):
 
         interact_count = 0
         while self.step < self.cfg.num_train_steps:
+
+            if self.step < 100:
+                if self.step % 10 == 0:
+                    print("step: {}".format(self.step))
+            elif self.step % 100 == 0:
+                print("step: {}".format(self.step))
+
             if done:
+
+                print("step: {}, finished episode".format(self.step))
+
                 if self.step > 0:
                     self.logger.log('train/duration', time.time() - start_time, self.step)
                     start_time = time.time()
@@ -188,7 +198,7 @@ class Workspace(object):
                 if self.step > 0 and self.step % self.cfg.eval_frequency == 0:
                     self.logger.log('eval/episode', episode, self.step)
                     self.evaluate()
-                
+
                 self.logger.log('train/episode_reward', episode_reward, self.step)
                 self.logger.log('train/true_episode_reward', true_episode_reward, self.step)
                 self.logger.log('train/total_feedback', self.total_feedback, self.step)
@@ -222,6 +232,9 @@ class Workspace(object):
 
             # run training update                
             if self.step == (self.cfg.num_seed_steps + self.cfg.num_unsup_steps):
+
+                print("step: {}, beginning learning with reward".format(self.step))
+
                 # update schedule
                 if self.cfg.reward_schedule == 1:
                     frac = (self.cfg.num_train_steps-self.step) / self.cfg.num_train_steps
@@ -278,7 +291,8 @@ class Workspace(object):
                         # corner case: new total feed > max feed
                         if self.reward_model.mb_size + self.total_feedback > self.cfg.max_feedback:
                             self.reward_model.set_batch(self.cfg.max_feedback - self.total_feedback)
-                            
+
+                        print("step: {}, get reward feedback".format(self.step))
                         self.learn_reward()
                         self.replay_buffer.relabel_with_predictor(self.reward_model)
                         interact_count = 0
