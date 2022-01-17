@@ -706,7 +706,8 @@ class RewardModel:
         teacher = self.UCB.select()
         self.previous_teacher_queried = teacher
 
-        self.UCB.print_two_armed_bandit_state()
+        if self.num_teachers == 2:
+            self.UCB.print_two_armed_bandit_state()
 
         return teacher
 
