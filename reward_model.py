@@ -802,8 +802,10 @@ class UCB:
 
         # estimate val of each arm
         values = [-1]*self.arms
-        for a in range(self.arms):
-            values[a] = self.evaluate(a)
+
+        # TODO: test
+        # for a in range(self.arms):
+        #     values[a] = self.evaluate(a)
 
         # choose randomly amongst argmax
         arm = self.random_argmax(values)
