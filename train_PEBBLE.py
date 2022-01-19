@@ -80,7 +80,8 @@ class Workspace(object):
             teacher_eps_skip=cfg.teacher_eps_skip, 
             teacher_eps_equal=cfg.teacher_eps_equal,
             teacher_query_cost=cfg.teacher_query_cost,
-            UCB_confidence=cfg.UCB_confidence)
+            UCB_confidence=cfg.UCB_confidence,
+            force_teacher=cfg.force_teacher)
         
     def evaluate(self, log=True):
         average_episode_reward = 0
