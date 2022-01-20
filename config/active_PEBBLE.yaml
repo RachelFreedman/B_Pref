@@ -25,7 +25,7 @@ label_margin: 0.0
 select_teacher: true
 UCB_confidence: 10
 num_teachers: 2
-teacher_beta: [-1, 0.001]
+teacher_beta: [-1, -1]
 teacher_gamma: [1, 1]
 teacher_eps_mistake: [0, 0]
 teacher_query_cost: [0, 0]
@@ -58,10 +58,11 @@ env: quadruped_walk
 gradient_update: 1
 
 #TEMP - debugging
-force_teacher: x
+update_bool: foo
+select_bool: bar
 
 # hydra configuration
 hydra:
     name: ${env}
     run:
-        dir: ./exp/${env}/H${diag_gaussian_actor.params.hidden_dim}_L${diag_gaussian_actor.params.hidden_depth}_lr${agent.params.actor_lr}/teacher_b${teacher_beta}_g${teacher_gamma}_m${teacher_eps_mistake}_s${teacher_eps_skip}_e${teacher_eps_equal}/label_smooth_${label_margin}/schedule_${reward_schedule}/${experiment}_active-${select_teacher}_teacher${force_teacher}_init${num_seed_steps}_unsup${num_unsup_steps}_inter${num_interact}_maxfeed${max_feedback}_seg${segment}_act${activation}_Rlr${reward_lr}_Rbatch${reward_batch}_Rupdate${reward_update}_en${ensemble_size}_sample${feed_type}_large_batch${large_batch}_seed${seed}
+        dir: ./exp/${env}/H${diag_gaussian_actor.params.hidden_dim}_L${diag_gaussian_actor.params.hidden_depth}_lr${agent.params.actor_lr}/teacher_b${teacher_beta}_g${teacher_gamma}_m${teacher_eps_mistake}_s${teacher_eps_skip}_e${teacher_eps_equal}/label_smooth_${label_margin}/schedule_${reward_schedule}/${experiment}_active-${select_teacher}_update-${update_bool}_select-${select_bool}_init${num_seed_steps}_unsup${num_unsup_steps}_inter${num_interact}_maxfeed${max_feedback}_seg${segment}_act${activation}_Rlr${reward_lr}_Rbatch${reward_batch}_Rupdate${reward_update}_en${ensemble_size}_sample${feed_type}_large_batch${large_batch}_seed${seed}

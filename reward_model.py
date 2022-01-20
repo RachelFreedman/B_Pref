@@ -84,7 +84,7 @@ def compute_smallest_dist(obs, full_obs):
     return total_dists.unsqueeze(1)
 
 class RewardModel:
-    def __init__(self, ds, da, force_teacher,
+    def __init__(self, ds, da, update_bool, select_bool,
                  ensemble_size=3, lr=3e-4, mb_size = 128, size_segment=1, 
                  env_maker=None, max_size=100, activation='tanh', capacity=5e5,  
                  large_batch=1, label_margin=0.0,
@@ -142,8 +142,13 @@ class RewardModel:
         self.select_teacher = select_teacher
         self.num_teachers = num_teachers
         self.teachers = {}
-        self.force_teacher = force_teacher
-        print("Forced to always query teacher", self.force_teacher)
+        self.update_bool = update_bool
+        self.select_bool = select_bool
+
+        print("### DEBUG CONFIG ###")
+        print("Update:", self.update_bool)
+        print("Select:", self.select_bool)
+        print("### ###")
 
         for i in range(self.num_teachers):
             try:
@@ -699,24 +704,31 @@ class RewardModel:
 
     def select_teacher_to_query(self, performance):
 
-        print("querying teacher", self.force_teacher)
-        return self.force_teacher
-
+        # already tested in select_teacher=False condition
         # if not self.select_teacher:
         #     return random.randint(0,self.num_teachers-1)
-        #
-        # # update bandit based on performance
-        # if self.previous_teacher_queried is not None:
-        #     cost = self.teachers[self.previous_teacher_queried].get_cost()
-        #     self.UCB.update(arm=self.previous_teacher_queried, cost=cost, reward=performance)
-        #
-        # teacher = self.UCB.select()
-        # self.previous_teacher_queried = teacher
-        #
+
+        # update bandit based on performance
+        if self.update_bool:
+            if self.previous_teacher_queried is not None:
+                cost = self.teachers[self.previous_teacher_queried].get_cost()
+                self.UCB.update(arm=self.previous_teacher_queried, cost=cost, reward=performance)
+        # else:
+            # don't update arm UCB estimates
+
+        if self.select_bool:
+            teacher = self.UCB.select()
+        else:
+            # force to query first teacher
+            teacher = 0
+
+        # just logging
         # if self.num_teachers == 2:
         #     self.UCB.print_two_armed_bandit_state()
-        #
-        # return teacher
+
+        self.previous_teacher_queried = teacher
+
+        return teacher
 
     def write_teacher_selection_record_to_csv(self, directory):
         self.UCB.write_record_to_csv(directory)
@@ -841,8 +853,13 @@ class UCB:
         Q = self.estimates[arm][UCB.Q]
 
         R = cost + reward
-        y = 1.0 / self.estimates[arm][UCB.N]
-        self.estimates[arm][UCB.Q] = (1-y)*Q + y*R
+
+        if self.estimates[arm][UCB.N] == 0:
+            y = float('inf')
+            self.estimates[arm][UCB.Q] = float('inf')
+        else:
+            y = 1.0 / self.estimates[arm][UCB.N]
+            self.estimates[arm][UCB.Q] = (1-y)*Q + y*R
 
         self.record_pull(self.time, arm, cost, reward, R)
         return "Updating Q of arm {} to {:.1f}. Old Q: {:.1f}, cost: {}, reward: {}, y: {:.1f}.".format(arm, self.estimates[arm][UCB.Q], Q, cost, reward, y)
