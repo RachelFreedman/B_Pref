@@ -15,7 +15,7 @@ import random
 
 from scipy.stats import norm
 
-device = 'cuda'
+device = 'cpu'
 
 def gen_net(in_size=1, out_size=1, H=128, n_layers=3, activation='tanh'):
     net = []
@@ -84,7 +84,7 @@ def compute_smallest_dist(obs, full_obs):
     return total_dists.unsqueeze(1)
 
 class RewardModel:
-    def __init__(self, ds, da, update_bool, select_bool,
+    def __init__(self, ds, da, random_argmax,
                  ensemble_size=3, lr=3e-4, mb_size = 128, size_segment=1, 
                  env_maker=None, max_size=100, activation='tanh', capacity=5e5,  
                  large_batch=1, label_margin=0.0,
@@ -137,17 +137,15 @@ class RewardModel:
         self.teacher_thres_skip = 0
         self.teacher_thres_equal = 0
 
-        self.UCB = UCB(arms=num_teachers, confidence=UCB_confidence)
+        self.random_argmax = random_argmax
+        self.UCB = UCB(arms=num_teachers, confidence=UCB_confidence, random_argmax=self.random_argmax)
         self.previous_teacher_queried = None
         self.select_teacher = select_teacher
         self.num_teachers = num_teachers
         self.teachers = {}
-        self.update_bool = update_bool
-        self.select_bool = select_bool
 
         print("### DEBUG CONFIG ###")
-        print("Update:", self.update_bool)
-        print("Select:", self.select_bool)
+        print("Argmax Random:", self.random_argmax)
         print("### ###")
 
         for i in range(self.num_teachers):
@@ -709,18 +707,18 @@ class RewardModel:
         #     return random.randint(0,self.num_teachers-1)
 
         # update bandit based on performance
-        if self.update_bool:
-            if self.previous_teacher_queried is not None:
-                cost = self.teachers[self.previous_teacher_queried].get_cost()
-                self.UCB.update(arm=self.previous_teacher_queried, cost=cost, reward=performance)
+        # if self.update_bool:
+        if self.previous_teacher_queried is not None:
+            cost = self.teachers[self.previous_teacher_queried].get_cost()
+            self.UCB.update(arm=self.previous_teacher_queried, cost=cost, reward=performance)
         # else:
             # don't update arm UCB estimates
 
-        if self.select_bool:
-            teacher = self.UCB.select()
-        else:
-            # force to query first teacher
-            teacher = 0
+        # if self.select_bool:
+        teacher = self.UCB.select()
+        # else:
+        #     # force to query first teacher
+        #     teacher = 0
 
         # just logging
         # if self.num_teachers == 2:
@@ -813,12 +811,13 @@ class UCB:
     Q = "quality"
     N = "count"
 
-    def __init__(self, arms, confidence):
+    def __init__(self, arms, confidence, random_argmax):
         self.arms = arms
         self.estimates = {}
         self.confidence = confidence
         self.time = 0
         self.record = []
+        self.rand_argmax = random_argmax
 
         initial_arm = { UCB.Q: 0, UCB.N: 0}
         for arm in range(arms):
@@ -833,8 +832,13 @@ class UCB:
         for a in range(self.arms):
             values[a] = self.evaluate(a)
 
-        # choose randomly amongst argmax
-        arm = self.random_argmax(values)
+        if self.rand_argmax:
+            # choose randomly amongst argmax
+            arm = self.random_argmax(values)
+        else:
+            # choose first argmax
+            arm = self.deterministic_argmax(values)
+
         self.estimates[arm][UCB.N] += 1
 
         print("Pulled arm {}. Arm UCB estimates: {}, number of arm {} pulls: {}"
@@ -863,6 +867,10 @@ class UCB:
 
         self.record_pull(self.time, arm, cost, reward, R)
         return "Updating Q of arm {} to {:.1f}. Old Q: {:.1f}, cost: {}, reward: {}, y: {:.1f}.".format(arm, self.estimates[arm][UCB.Q], Q, cost, reward, y)
+
+    def deterministic_argmax(self, vector):
+        index = np.argmax(np.array(vector))
+        return index
 
     def random_argmax(self, vector):
         index = np.random.choice(np.where(vector == np.array(vector).max())[0])

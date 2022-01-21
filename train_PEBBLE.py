@@ -81,8 +81,7 @@ class Workspace(object):
             teacher_eps_equal=cfg.teacher_eps_equal,
             teacher_query_cost=cfg.teacher_query_cost,
             UCB_confidence=cfg.UCB_confidence,
-            select_bool=cfg.select_bool,
-            update_bool=cfg.update_bool)
+            random_argmax=cfg.random_argmax)
         
     def evaluate(self, log=True):
         average_episode_reward = 0
