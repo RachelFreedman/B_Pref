@@ -84,7 +84,7 @@ def compute_smallest_dist(obs, full_obs):
     return total_dists.unsqueeze(1)
 
 class RewardModel:
-    def __init__(self, ds, da, random_argmax,
+    def __init__(self, ds, da,
                  ensemble_size=3, lr=3e-4, mb_size = 128, size_segment=1, 
                  env_maker=None, max_size=100, activation='tanh', capacity=5e5,  
                  large_batch=1, label_margin=0.0,
@@ -137,15 +137,15 @@ class RewardModel:
         self.teacher_thres_skip = 0
         self.teacher_thres_equal = 0
 
-        self.random_argmax = random_argmax
-        self.UCB = UCB(arms=num_teachers, confidence=UCB_confidence, random_argmax=self.random_argmax)
+        self.UCB = UCB(arms=num_teachers, confidence=UCB_confidence)
         self.previous_teacher_queried = None
         self.select_teacher = select_teacher
         self.num_teachers = num_teachers
         self.teachers = {}
 
         print("### DEBUG CONFIG ###")
-        print("Argmax Random:", self.random_argmax)
+        print("Number Teachers:", self.num_teachers)
+        print("Beta:", teacher_beta)
         print("### ###")
 
         for i in range(self.num_teachers):
@@ -811,13 +811,12 @@ class UCB:
     Q = "quality"
     N = "count"
 
-    def __init__(self, arms, confidence, random_argmax):
+    def __init__(self, arms, confidence):
         self.arms = arms
         self.estimates = {}
         self.confidence = confidence
         self.time = 0
         self.record = []
-        self.rand_argmax = random_argmax
 
         initial_arm = { UCB.Q: 0, UCB.N: 0}
         for arm in range(arms):
@@ -832,12 +831,7 @@ class UCB:
         for a in range(self.arms):
             values[a] = self.evaluate(a)
 
-        if self.rand_argmax:
-            # choose randomly amongst argmax
-            arm = self.random_argmax(values)
-        else:
-            # choose first argmax
-            arm = self.deterministic_argmax(values)
+        arm = self.random_argmax(values)
 
         self.estimates[arm][UCB.N] += 1
 
