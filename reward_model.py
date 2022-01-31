@@ -150,13 +150,19 @@ class RewardModel:
             except IndexError:
                 raise ValueError("num_teachers is {}, so expecting at least {} values in each of the teacher parameter arrays"
                                  .format(self.num_teachers, self.num_teachers))
+        
+        self.label_margin = label_margin
+        self.label_target = 1 - 2*self.label_margin
+
+        print("### DEBUG CONFIG ###")
+        print("Number Teachers:", self.num_teachers)
+        print("Beta:", teacher_beta)
+        print("### ###")
+
         if self.select_teacher:
             print("Imported {} teacher(s), will actively select teacher to query".format(num_teachers))
         else:
             print("Imported {} teacher(s), will select teacher for each query randomly".format(num_teachers))
-        
-        self.label_margin = label_margin
-        self.label_target = 1 - 2*self.label_margin
     
     def softXEnt_loss(self, input, target):
         logprobs = torch.nn.functional.log_softmax (input, dim = 1)
@@ -825,14 +831,23 @@ class UCB:
         Q = self.estimates[arm][UCB.Q]
 
         R = cost + reward
-        y = 1.0 / self.estimates[arm][UCB.N]
-        self.estimates[arm][UCB.Q] = (1-y)*Q + y*R
+
+        if self.estimates[arm][UCB.N] == 0:
+            y = float('inf')
+            self.estimates[arm][UCB.Q] = float('inf')
+        else:
+            y = 1.0 / self.estimates[arm][UCB.N]
+            self.estimates[arm][UCB.Q] = (1 - y) * Q + y * R
 
         self.record_pull(self.time, arm, cost, reward, R)
         return "Updating Q of arm {} to {:.1f}. Old Q: {:.1f}, cost: {}, reward: {}, y: {:.1f}.".format(arm, self.estimates[arm][UCB.Q], Q, cost, reward, y)
 
     def random_argmax(self, vector):
         index = np.random.choice(np.where(vector == np.array(vector).max())[0])
+        return index
+
+    def deterministic_argmax(self, vector):
+        index = np.argmax(np.array(vector))
         return index
 
     def print_two_armed_bandit_state(self):
