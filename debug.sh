@@ -1,4 +1,4 @@
-for seed in 12345; do
+for seed in 23451; do
   for num_teachers in 1 2; do
       if [ $num_teachers = 1 ]; then
           echo "Running with 1 teacher."
