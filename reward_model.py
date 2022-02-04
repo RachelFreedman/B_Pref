@@ -702,7 +702,7 @@ class RewardModel:
     def select_teacher_to_query(self, performance):
 
         if not self.select_teacher:
-            return random.randint(0,self.num_teachers-1)
+            return self.UCB.select_randomly()
 
         # update bandit based on performance
         if self.previous_teacher_queried is not None:
@@ -817,6 +817,20 @@ class UCB:
 
         print("Pulled arm {}. Arm UCB estimates: {}, number of arm {} pulls: {}"
               .format(arm, values, arm, self.estimates[arm][UCB.N]))
+
+        return arm
+
+    def select_randomly(self):
+        self.time += 1
+
+        # choose randomly amongst arms
+        arm = random.randint(0, self.arms - 1)
+
+        self.estimates[arm][UCB.N] += 1
+        self.record_pull(self.time, arm, -1, -1, -1)
+
+        print("Pulled arm {}. Number of arm {} pulls: {}"
+              .format(arm, arm, self.estimates[arm][UCB.N]))
 
         return arm
 

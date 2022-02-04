@@ -341,8 +341,7 @@ class Workspace(object):
         self.agent.save(self.work_dir, self.step)
         self.reward_model.save(self.work_dir, self.step)
 
-        if self.cfg.select_teacher:
-            self.reward_model.write_teacher_selection_record_to_csv(self.work_dir)
+        self.reward_model.write_teacher_selection_record_to_csv(self.work_dir)
         
 @hydra.main(config_path='config/active_PEBBLE.yaml', strict=True)
 def main(cfg):
